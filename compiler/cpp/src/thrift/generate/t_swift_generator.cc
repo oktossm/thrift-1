@@ -265,7 +265,14 @@ private:
     }
     return false;
   }
-
+  
+  bool type_can_be_null(t_type* ttype) {
+    ttype = get_true_type(ttype);
+    
+    return ttype->is_container() || ttype->is_struct() || ttype->is_xception()
+           || ttype->is_string();
+  }
+  
   string constants_declarations_;
 
   /**
@@ -314,6 +321,7 @@ void t_swift_generator::init_generator() {
   f_decl_.open(f_decl_fullname.c_str());
 
   f_decl_ << autogen_comment() << endl;
+  f_decl_ << "// swiftlint:disable all" << endl;
 
   f_decl_ << swift_imports() << swift_thrift_imports() << endl;
 
@@ -323,6 +331,7 @@ void t_swift_generator::init_generator() {
   f_impl_.open(f_impl_fullname.c_str());
 
   f_impl_ << autogen_comment() << endl;
+  f_impl_ << "// swiftlint:disable all" << endl;
 
   f_impl_ << swift_imports() << swift_thrift_imports() << endl;
 
@@ -416,14 +425,14 @@ void t_swift_generator::generate_enum(t_enum* tenum) {
     generate_old_enum(tenum);
     return;
   }
-  f_decl_ << indent() << "public enum " << tenum->get_name() << " : TEnum";
+  f_decl_ << indent() << "@objc public enum " << tenum->get_name() << " : Int32, TEnum";
   block_open(f_decl_);
 
   vector<t_enum_value*> constants = tenum->get_constants();
   vector<t_enum_value*>::iterator c_iter;
 
   for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
-    f_decl_ << indent() << "case " << enum_case_name((*c_iter), true) << endl;
+    f_decl_ << indent() << "case " << enum_case_name((*c_iter), true) << " = " << (*c_iter)->get_value() << endl;
   }
 
   // unknown associated value case for safety and similar behavior to other languages
@@ -461,36 +470,36 @@ void t_swift_generator::generate_enum(t_enum* tenum) {
   block_close(f_decl_);
   f_decl_ << endl;
 
-  // rawValue getter
-  f_decl_ << indent() << "public var rawValue: Int32";
-  block_open(f_decl_);
-  f_decl_ << indent() << "switch self {" << endl;
-  for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
-    f_decl_ << indent() << "case ." << enum_case_name((*c_iter), true)
-            << ": return " << (*c_iter)->get_value() << endl;
-  }
-  if (safe_enums_) {
-    f_decl_ << indent() << "case .unknown(let value): return value" << endl;
-  }
-  f_decl_ << indent() << "}" << endl;
-  block_close(f_decl_);
-  f_decl_ << endl;
-
-  // convenience rawValue initalizer
-  f_decl_ << indent() << "public init?(rawValue: Int32)";
-  block_open(f_decl_);
-  f_decl_ << indent() << "switch rawValue {" << endl;;
-  for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
-    f_decl_ << indent() << "case " << (*c_iter)->get_value()
-            << ": self = ." << enum_case_name((*c_iter), true) << endl;
-  }
-  if (!safe_enums_) {
-    f_decl_ << indent() << "default: return nil" << endl;
-  } else {
-    f_decl_ << indent() << "default: self = .unknown(rawValue)" << endl;
-  }
-  f_decl_ << indent() << "}" << endl;
-  block_close(f_decl_);
+//  // rawValue getter
+//  f_decl_ << indent() << "public var rawValue: Int32";
+//  block_open(f_decl_);
+//  f_decl_ << indent() << "switch self {" << endl;
+//  for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
+//    f_decl_ << indent() << "case ." << enum_case_name((*c_iter), true)
+//            << ": return " << (*c_iter)->get_value() << endl;
+//  }
+//  if (safe_enums_) {
+//    f_decl_ << indent() << "case .unknown(let value): return value" << endl;
+//  }
+//  f_decl_ << indent() << "}" << endl;
+//  block_close(f_decl_);
+//  f_decl_ << endl;
+//
+//  // convenience rawValue initalizer
+//  f_decl_ << indent() << "public init?(rawValue: Int32)";
+//  block_open(f_decl_);
+//  f_decl_ << indent() << "switch rawValue {" << endl;;
+//  for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
+//    f_decl_ << indent() << "case " << (*c_iter)->get_value()
+//            << ": self = ." << enum_case_name((*c_iter), true) << endl;
+//  }
+//  if (!safe_enums_) {
+//    f_decl_ << indent() << "default: return nil" << endl;
+//  } else {
+//    f_decl_ << indent() << "default: self = .unknown(rawValue)" << endl;
+//  }
+//  f_decl_ << indent() << "}" << endl;
+//  block_close(f_decl_);
 
 
 
@@ -582,12 +591,14 @@ void t_swift_generator::generate_consts(vector<t_const*> consts) {
 
   // Public constants for base types & strings
   vector<t_const*>::iterator c_iter;
+  const_interface << "@objc public class " << get_real_swift_module(program_) << "Constants: NSObject {" << endl;
   for (c_iter = consts.begin(); c_iter != consts.end(); ++c_iter) {
     t_type* type = (*c_iter)->get_type();
-    const_interface << "public let " << capitalize((*c_iter)->get_name()) << " : " << type_name(type) << " = ";
+    const_interface << "  @objc public static let " << capitalize((*c_iter)->get_name()) << " : " << type_name(type) << " = ";
     render_const_value(const_interface, type, (*c_iter)->get_value());
-    const_interface << endl << endl;
+    const_interface << endl;
   }
+  const_interface << "}" << endl << endl;
 
   // this gets spit into the header file in ::close_generator
   constants_declarations_ = const_interface.str();
@@ -690,10 +701,10 @@ void t_swift_generator::generate_swift_struct(ostream& out,
 
     string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
 
-    out << indent() << visibility << " final class " << tstruct->get_name();
+    out << indent() << "@objc " << visibility << " final class " << tstruct->get_name() << ": NSObject";
 
     if (tstruct->is_xception()) {
-      out << " : Swift.Error"; // Error seems to be a common exception name in thrift
+      out << ", Swift.Error"; // Error seems to be a common exception name in thrift
     }
 
     block_open(out);
@@ -711,7 +722,7 @@ void t_swift_generator::generate_swift_struct(ostream& out,
     out << endl;
 
     if (!struct_has_required_fields(tstruct)) {
-      indent(out) << visibility << " init() { }" << endl;
+      indent(out) << "@objc " << visibility << " override init() { }" << endl;
     }
     if (struct_has_required_fields(tstruct)) {
       generate_swift_struct_init(out, tstruct, false, is_private);
@@ -793,7 +804,7 @@ void t_swift_generator::generate_swift_struct_init(ostream& out,
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
 
-  indent(out) << visibility << " init(";
+  indent(out) << (all ? "" : "@objc ")  << visibility << " init(";
 
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
@@ -850,10 +861,10 @@ void t_swift_generator::generate_swift_struct_hashable_extension(ostream& out,
                                                                  bool is_private) {
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
-  indent(out) << "extension " << tstruct->get_name() << " : Hashable";
+  indent(out) << "extension " << tstruct->get_name();
   block_open(out);
   out << endl;
-  indent(out) << visibility << " var hashValue : Int";
+  indent(out) << visibility << " override var hash : Int";
   block_open(out);
 
   const vector<t_field*>& members = tstruct->get_members();
@@ -861,13 +872,13 @@ void t_swift_generator::generate_swift_struct_hashable_extension(ostream& out,
 
   if (!members.empty()) {
     indent(out) << "let prime = 31" << endl;
-    indent(out) << "var result = 1" << endl;
+    indent(out) << "var hashResult = 1" << endl;
     if (!tstruct->is_union()) {
       for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
         t_field* tfield = *m_iter;
-        string accessor = field_is_optional(tfield) ? "?." : ".";
+        string accessor = field_is_optional(tfield) ? " as TSerializable?)?." : " as TSerializable).";
         string defaultor = field_is_optional(tfield) ? " ?? 0" : "";
-        indent(out) << "result = prime &* result &+ (" << maybe_escape_identifier(tfield->get_name()) << accessor
+        indent(out) << "hashResult = prime &* hashResult &+ ((" << maybe_escape_identifier(tfield->get_name()) << accessor
                     <<  "hashValue" << defaultor << ")" << endl;
       }
     } else {
@@ -878,7 +889,7 @@ void t_swift_generator::generate_swift_struct_hashable_extension(ostream& out,
       }
       indent(out) << "}" << endl << endl;
     }
-    indent(out) << "return result" << endl;
+    indent(out) << "return hashResult" << endl;
   }
   else {
     indent(out) << "return 31" << endl;
@@ -990,7 +1001,7 @@ void t_swift_generator::generate_swift_struct_thrift_extension(ostream& out,
                                                                bool is_result,
                                                                bool is_private) {
 
-  indent(out) << "extension " << tstruct->get_name() << " : TStruct";
+  indent(out) << "extension " << tstruct->get_name() << " : TStruct, TBase";
 
   block_open(out);
 
@@ -1435,12 +1446,11 @@ void t_swift_generator::generate_swift_struct_printable_extension(ostream& out, 
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
-  indent(out) << "extension " << tstruct->get_name() << " : "
-              << (debug_descriptions_ ? "CustomDebugStringConvertible" : "CustomStringConvertible");
+  indent(out) << "extension " << tstruct->get_name();
 
   block_open(out);
   out << endl;
-  indent(out) << "public var description : String";
+  indent(out) << "public override var description : String";
   block_open(out);
   indent(out) << "var desc = \"" << tstruct->get_name();
 
@@ -1477,7 +1487,7 @@ void t_swift_generator::generate_swift_struct_printable_extension(ostream& out, 
     }
     indent(out) << "desc += \")\"" << endl;
   }
-
+  indent(out) << "desc += \")\"" << endl;
   indent(out) << "return desc" << endl;
   block_close(out);
   out << endl;
@@ -2536,13 +2546,15 @@ string t_swift_generator::type_name(t_type* ttype, bool is_optional, bool is_for
     result += base_type_name((t_base_type*)ttype);
   } else if (ttype->is_map()) {
     t_map *map = (t_map *)ttype;
-    result += "TMap<" + type_name(map->get_key_type()) + ", " + type_name(map->get_val_type()) + ">";
+    t_type *valtype = map->get_val_type();
+    result += "Dictionary<" + type_name(map->get_key_type()) + ", " + (valtype->is_enum() ? "Int32" : type_name(valtype)) + ">";
   } else if (ttype->is_set()) {
     t_set *set = (t_set *)ttype;
-    result += "TSet<" + type_name(set->get_elem_type()) + ">";
+    result += "Set<" + type_name(set->get_elem_type()) + ">";
   } else if (ttype->is_list()) {
     t_list *list = (t_list *)ttype;
-    result += "TList<" + type_name(list->get_elem_type()) + ">";
+    t_type *elemtype = list->get_elem_type();
+    result += "Array<" + (elemtype->is_enum() ? "Int32" : type_name(elemtype)) + ">";
   }
   else {
     t_program* program = ttype->get_program();
@@ -2745,13 +2757,34 @@ void t_swift_generator::render_const_value(ostream& out,
 string t_swift_generator::declare_property(t_field* tfield, bool is_private) {
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
-
+  bool nonObjc = field_is_optional(tfield) && !type_can_be_null(tfield->get_type());
   ostringstream render;
 
-  render << visibility << " var " << maybe_escape_identifier(tfield->get_name());
+  render << (nonObjc ? "" : "@objc ") << visibility << " var " << maybe_escape_identifier(tfield->get_name());
 
   if (field_is_optional(tfield)) {
     render << (gen_cocoa_ ? " " : "") << ": " << type_name(tfield->get_type(), true);
+    if (nonObjc) {
+      render << endl << indent() << "@objc " << visibility << " var " << maybe_escape_identifier(tfield->get_name()) << "Container" << ": NSNumber {";
+      render << endl << indent() << indent() << "get {";
+      if (tfield->get_type()->is_enum()) {
+        render << endl << indent() << indent() << indent() << "return " << maybe_escape_identifier(tfield->get_name()) << ".flatMap { NSNumber(value: $0.rawValue) } ?? NSNumber()";
+      } else {
+        render << endl << indent() << indent() << indent() << "return " << maybe_escape_identifier(tfield->get_name()) << ".flatMap { NSNumber(value: $0) } ?? NSNumber()";
+      }
+      render << endl << indent() << indent() << "}";
+      render << endl << indent() << indent() << "set {";
+      if (tfield->get_type()->is_enum()) {
+        render << endl << indent() << indent() << indent() << maybe_escape_identifier(tfield->get_name()) << " = (newValue as? Int32).flatMap { " << type_name(tfield->get_type()) << "(rawValue: $0)  }";
+      } else {
+        render << endl << indent() << indent() << indent() << maybe_escape_identifier(tfield->get_name()) << " = newValue as? " << type_name(tfield->get_type());
+      }
+      render << endl << indent() << indent() << "}";
+      render << endl << indent() << "}";
+      render << endl << indent() << "@objc " << visibility << " var " << maybe_escape_identifier(tfield->get_name()) << "IsSet" << ": Bool {";
+      render << endl << indent() << indent() << "return " << maybe_escape_identifier(tfield->get_name()) << " != nil";
+      render << endl << indent() << "}";
+    }
   }
   else {
     if (!gen_cocoa_) {
