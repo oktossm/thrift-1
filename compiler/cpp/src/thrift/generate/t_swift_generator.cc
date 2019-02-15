@@ -61,6 +61,7 @@ public:
     gen_cocoa_ = false;
     promise_kit_ = false;
     safe_enums_ = false;
+    gen_requests_ = false;
 
     for( iter = parsed_options.begin(); iter != parsed_options.end(); ++iter) {
       if( iter->first.compare("log_unexpected") == 0) {
@@ -77,6 +78,8 @@ public:
         gen_cocoa_ = true;
       } else if( iter->first.compare("safe_enums") == 0) {
         safe_enums_ = true;
+      } else if( iter->first.compare("gen_requests") == 0) {
+          gen_requests_ = true;
       } else if( iter->first.compare("promise_kit") == 0) {
         if (gen_cocoa_ == false) {
           throw "PromiseKit only available with Swift 2.x, use `cocoa` option" + iter->first;
@@ -273,6 +276,16 @@ private:
            || ttype->is_string();
   }
   
+  bool hasSuffix (std::string const &fullString, std::string const &ending) {
+    if (fullString.length() >= ending.length()) {
+      return (0 == fullString.compare (fullString.length() - ending.length(), ending.length(), ending));
+    } else {
+      return false;
+    }
+  }
+  
+  
+  
   string constants_declarations_;
 
   /**
@@ -289,6 +302,7 @@ private:
   bool no_strict_;
   bool namespaced_;
   bool safe_enums_;
+  bool gen_requests_;
   set<string> swift_reserved_words_;
 
   /** Swift 2/Cocoa compatibility */
@@ -1001,7 +1015,7 @@ void t_swift_generator::generate_swift_struct_thrift_extension(ostream& out,
                                                                bool is_result,
                                                                bool is_private) {
 
-  indent(out) << "extension " << tstruct->get_name() << " : TStruct, TBase";
+  indent(out) << "extension " << tstruct->get_name() << ": TStruct, TBase";
 
   block_open(out);
 
@@ -1050,6 +1064,17 @@ void t_swift_generator::generate_swift_struct_thrift_extension(ostream& out,
 
   block_close(out);
   out << endl;
+  
+  if (gen_requests_ && hasSuffix(tstruct->get_name(), "Request")) {
+    out << endl;
+    string name = tstruct->get_name();
+    indent(out) << "extension " << name << ": AnyRequest";
+    block_open(out);
+    out << indent() << "typealias Response = " << name.replace(name.length() - 7, 7, "Response");
+    out << endl;
+    block_close(out);
+    out << endl;
+  }
 }
 
 void t_swift_generator::generate_swift_union_reader(ostream& out, t_struct* tstruct) {
@@ -3229,4 +3254,5 @@ THRIFT_REGISTER_GENERATOR(
     "    namespaced:      Generate source in Module scoped output directories for Swift Namespacing.\n"
     "    cocoa:           Generate Swift 2.x code compatible with the Thrift/Cocoa library\n"
     "    promise_kit:     Generate clients which invoke asynchronously via promises (only use with cocoa flag)\n"
-    "    safe_enums:      Generate enum types with an unknown case to handle unspecified values rather than throw a serialization error\n")
+    "    safe_enums:      Generate enum types with an unknown case to handle unspecified values rather than throw a serialization error\n"
+    "    gen_requests:    Generate AnyRequest conformance for requests\n")
