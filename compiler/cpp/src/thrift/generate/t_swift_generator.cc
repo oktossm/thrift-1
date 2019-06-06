@@ -1070,7 +1070,7 @@ void t_swift_generator::generate_swift_struct_thrift_extension(ostream& out,
     string name = tstruct->get_name();
     indent(out) << "extension " << name << ": AnyRequest";
     block_open(out);
-    out << indent() << "typealias Response = " << name.replace(name.length() - 7, 7, "Response");
+    out << indent() << "public typealias Response = " << name.replace(name.length() - 7, 7, "Response");
     out << endl;
     block_close(out);
     out << endl;
