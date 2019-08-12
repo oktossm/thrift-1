@@ -124,6 +124,7 @@ public:
   void generate_swift_struct_init(ostream& out,
                                   t_struct* tstruct,
                                   bool all,
+                                  bool hasNonObjc,
                                   bool is_private);
 
   void generate_swift_struct_implementation(ostream& out,
@@ -268,12 +269,44 @@ private:
     }
     return false;
   }
+    
+  bool struct_has_nonobjc_fields(t_struct* tstruct) {
+    const vector<t_field*>& members = tstruct->get_members();
+    vector<t_field*>::const_iterator m_iter;
+    for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
+      if (!field_can_be_objc(*m_iter)) {
+        return true;
+      }
+    }
+    return false;
+  }
   
   bool type_can_be_null(t_type* ttype) {
     ttype = get_true_type(ttype);
     
     return ttype->is_container() || ttype->is_struct() || ttype->is_xception()
            || ttype->is_string();
+  }
+  
+  bool field_can_be_objc(t_field* tfield) {
+    t_type *ttype = tfield->get_type();
+    
+    if (ttype->is_map()) {
+      t_map *map = (t_map *)ttype;
+      t_type *valtype = map->get_val_type();
+      t_type *keytype = map->get_key_type();
+      return !valtype->is_enum() && !keytype->is_enum();
+    } else if (ttype->is_set()) {
+      t_set *set = (t_set *)ttype;
+      t_type *elemtype = set->get_elem_type();
+      return !elemtype->is_enum();
+    } else if (ttype->is_list()) {
+      t_list *list = (t_list *)ttype;
+      t_type *elemtype = list->get_elem_type();
+      return !elemtype->is_enum();
+    }
+    
+    return !field_is_optional(tfield) || type_can_be_null(ttype);
   }
   
   bool hasSuffix (std::string const &fullString, std::string const &ending) {
@@ -715,7 +748,7 @@ void t_swift_generator::generate_swift_struct(ostream& out,
 
     string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
 
-    out << indent() << "@objc " << visibility << " final class " << tstruct->get_name() << ": NSObject";
+    out << indent() << visibility << " final class " << tstruct->get_name() << ": NSObject";
 
     if (tstruct->is_xception()) {
       out << ", Swift.Error"; // Error seems to be a common exception name in thrift
@@ -739,10 +772,10 @@ void t_swift_generator::generate_swift_struct(ostream& out,
       indent(out) << "@objc " << visibility << " override init() { }" << endl;
     }
     if (struct_has_required_fields(tstruct)) {
-      generate_swift_struct_init(out, tstruct, false, is_private);
+      generate_swift_struct_init(out, tstruct, false, struct_has_nonobjc_fields(tstruct), is_private);
     }
     if (struct_has_optional_fields(tstruct)) {
-      generate_swift_struct_init(out, tstruct, true, is_private);
+      generate_swift_struct_init(out, tstruct, true, struct_has_nonobjc_fields(tstruct), is_private);
     }
   }
 
@@ -792,10 +825,10 @@ void t_swift_generator::generate_old_swift_struct(ostream& out,
   out << endl;
 
   if (struct_has_required_fields(tstruct)) {
-    generate_swift_struct_init(out, tstruct, false, is_private);
+    generate_swift_struct_init(out, tstruct, false, struct_has_nonobjc_fields(tstruct), is_private);
   }
   if (struct_has_optional_fields(tstruct)) {
-    generate_swift_struct_init(out, tstruct, true, is_private);
+    generate_swift_struct_init(out, tstruct, true, struct_has_nonobjc_fields(tstruct), is_private);
   }
 
   block_close(out);
@@ -814,11 +847,12 @@ void t_swift_generator::generate_old_swift_struct(ostream& out,
 void t_swift_generator::generate_swift_struct_init(ostream& out,
                                                    t_struct* tstruct,
                                                    bool all,
+                                                   bool hasNonObjc,
                                                    bool is_private) {
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
 
-  indent(out) << (all ? "" : "@objc ")  << visibility << " init(";
+  indent(out) << (all || hasNonObjc ? "" : "@objc ")  << visibility << " init(";
 
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
@@ -2572,7 +2606,8 @@ string t_swift_generator::type_name(t_type* ttype, bool is_optional, bool is_for
   } else if (ttype->is_map()) {
     t_map *map = (t_map *)ttype;
     t_type *valtype = map->get_val_type();
-    result += "Dictionary<" + type_name(map->get_key_type()) + ", " + (valtype->is_enum() ? "Int32" : type_name(valtype)) + ">";
+    t_type *keytype = map->get_key_type();
+    result += "Dictionary<" + type_name(keytype) + ", " + type_name(valtype) + ">";
   } else if (ttype->is_set()) {
     t_set *set = (t_set *)ttype;
     result += "Set<" + type_name(set->get_elem_type()) + ">";
@@ -2782,27 +2817,28 @@ void t_swift_generator::render_const_value(ostream& out,
 string t_swift_generator::declare_property(t_field* tfield, bool is_private) {
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
-  bool nonObjc = field_is_optional(tfield) && !type_can_be_null(tfield->get_type());
+  bool nonObjc = !field_can_be_objc(tfield);
   ostringstream render;
 
   render << (nonObjc ? "" : "@objc ") << visibility << " var " << maybe_escape_identifier(tfield->get_name());
 
+  t_type *ttype = tfield->get_type();
   if (field_is_optional(tfield)) {
     render << (gen_cocoa_ ? " " : "") << ": " << type_name(tfield->get_type(), true);
-    if (nonObjc) {
-      render << endl << indent() << "@objc " << visibility << " var " << maybe_escape_identifier(tfield->get_name()) << "Container" << ": NSNumber {";
+    if (nonObjc && (ttype->is_base_type() || ttype->is_enum())) {
+      render << endl << indent() << "@objc " << visibility << " var " << "objc" << capitalize(maybe_escape_identifier(tfield->get_name())) << ": NSNumber {";
       render << endl << indent() << indent() << "get {";
-      if (tfield->get_type()->is_enum()) {
+      if (ttype->is_enum()) {
         render << endl << indent() << indent() << indent() << "return " << maybe_escape_identifier(tfield->get_name()) << ".flatMap { NSNumber(value: $0.rawValue) } ?? NSNumber()";
       } else {
         render << endl << indent() << indent() << indent() << "return " << maybe_escape_identifier(tfield->get_name()) << ".flatMap { NSNumber(value: $0) } ?? NSNumber()";
       }
       render << endl << indent() << indent() << "}";
       render << endl << indent() << indent() << "set {";
-      if (tfield->get_type()->is_enum()) {
-        render << endl << indent() << indent() << indent() << maybe_escape_identifier(tfield->get_name()) << " = (newValue as? Int32).flatMap { " << type_name(tfield->get_type()) << "(rawValue: $0)  }";
+      if (ttype->is_enum()) {
+        render << endl << indent() << indent() << indent() << maybe_escape_identifier(tfield->get_name()) << " = (newValue as? Int32).flatMap { " << type_name(ttype) << "(rawValue: $0)  }";
       } else {
-        render << endl << indent() << indent() << indent() << maybe_escape_identifier(tfield->get_name()) << " = newValue as? " << type_name(tfield->get_type());
+        render << endl << indent() << indent() << indent() << maybe_escape_identifier(tfield->get_name()) << " = newValue as? " << type_name(ttype);
       }
       render << endl << indent() << indent() << "}";
       render << endl << indent() << "}";
@@ -2813,10 +2849,10 @@ string t_swift_generator::declare_property(t_field* tfield, bool is_private) {
   }
   else {
     if (!gen_cocoa_) {
-      render << ": " << type_name(tfield->get_type(), false);
+      render << ": " << type_name(ttype, false);
     } else {
       // Swift2/Cocoa backward compat, Bad, default init
-      render << " = " << type_name(tfield->get_type(), false) << "()";
+      render << " = " << type_name(ttype, false) << "()";
     }
   }
 
