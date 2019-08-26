@@ -146,6 +146,8 @@ public:
 
   void generate_swift_struct_printable_extension(ostream& out, t_struct* tstruct);
   void generate_swift_union_reader(ostream& out, t_struct* tstruct);
+  
+  void generate_enum_description(ostream& out, t_enum* tenum);
 
   string function_result_helper_struct_type(t_service *tservice, t_function* tfunction);
   string function_args_helper_struct_type(t_service* tservice, t_function* tfunction);
@@ -472,7 +474,7 @@ void t_swift_generator::generate_enum(t_enum* tenum) {
     generate_old_enum(tenum);
     return;
   }
-  f_decl_ << indent() << "@objc public enum " << tenum->get_name() << " : Int32, TEnum";
+  f_decl_ << indent() << "@objc public enum " << tenum->get_name() << " : Int32, TEnum, CaseIterable";
   block_open(f_decl_);
 
   vector<t_enum_value*> constants = tenum->get_constants();
@@ -553,7 +555,47 @@ void t_swift_generator::generate_enum(t_enum* tenum) {
 
   block_close(f_decl_);
   f_decl_ << endl;
+  
+  generate_enum_description(f_impl_, tenum);
 }
+
+
+/**
+ * Generates description code for an enumerated type.
+ * Fixes issues with printing enum description in Swift.
+ * @param tenum The enumeration
+ */
+void t_swift_generator::generate_enum_description(ostream& out, t_enum* tenum) {
+  out << indent() << "extension " << tenum->get_name() << ": CustomStringConvertible";
+  block_open(out);
+  
+  vector<t_enum_value*> constants = tenum->get_constants();
+  vector<t_enum_value*>::iterator c_iter;
+  
+  out << endl;
+  indent(out) << "public var description : String";
+  block_open(out);
+  
+  indent(out) << "switch self";
+  block_open(out);
+  
+  for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
+    out << indent() << "case ." << enum_case_name((*c_iter), true) << ": return \"" << enum_case_name((*c_iter), true) << "\"" << endl;
+  }
+  
+  // unknown associated value case for safety and similar behavior to other languages
+  if (safe_enums_) {
+    out << indent() << "case .unknown: return \"unknown\"" << endl;
+  }
+
+  block_close(out);
+  block_close(out);
+  out << endl;
+  block_close(out);
+  out << endl;
+  out << endl;
+}
+
 
 /**
  * Generates code for an enumerated type. This is for Swift 2.x/Cocoa
