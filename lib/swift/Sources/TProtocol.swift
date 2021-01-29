@@ -137,7 +137,7 @@ public extension TProtocol {
     case .i32:    _ = try read() as Int32
     case .i64:    _ = try read() as Int64
     case .double: _ = try read() as Double
-    case .string: _ = try read() as String
+    case .string: _ = try read() as Data
       
     case .struct:
       _ = try readStructBegin()
