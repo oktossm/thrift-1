@@ -894,7 +894,7 @@ void t_swift_generator::generate_swift_struct_init(ostream& out,
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
 
-  indent(out) << (all || hasNonObjc ? "" : "@objc ")  << visibility << " init(";
+  indent(out) << (all && hasNonObjc ? "" : "@objc ")  << visibility << " init(";
 
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
@@ -966,9 +966,9 @@ void t_swift_generator::generate_swift_struct_hashable_extension(ostream& out,
     if (!tstruct->is_union()) {
       for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
         t_field* tfield = *m_iter;
-        string accessor = field_is_optional(tfield) ? " as TSerializable?)?." : " as TSerializable).";
+        string accessor = field_is_optional(tfield) ? "?." : ".";
         string defaultor = field_is_optional(tfield) ? " ?? 0" : "";
-        indent(out) << "hashResult = prime &* hashResult &+ ((" << maybe_escape_identifier(tfield->get_name()) << accessor
+        indent(out) << "hashResult = prime &* hashResult &+ (" << maybe_escape_identifier(tfield->get_name()) << accessor
                     <<  "hashValue" << defaultor << ")" << endl;
       }
     } else {
@@ -1003,10 +1003,13 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
                                                                   bool is_private) {
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
-
-  indent(out) << visibility << " func ==(lhs: " << type_name(tstruct) << ", rhs: "
-              << type_name(tstruct) << ") -> Bool";
+  indent(out) << "extension " << tstruct->get_name();
   block_open(out);
+  out << endl;
+  indent(out) << visibility << " override func isEqual(_ object: Any?) -> Bool";
+  block_open(out);
+  indent(out) << "guard let other = object as? " << tstruct->get_name() << " else { return false }";
+  out << endl;
   indent(out) << "return";
 
   const vector<t_field*>& members = tstruct->get_members();
@@ -1019,8 +1022,8 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
 
       for (m_iter = members.begin(); m_iter != members.end();) {
         t_field* tfield = *m_iter;
-        indent(out) << "(lhs." << maybe_escape_identifier(tfield->get_name())
-                    << (gen_cocoa_ ? " ?" : " ") << "== rhs." << maybe_escape_identifier(tfield->get_name()) << ")"; // swift 2 ?== operator not in 3?
+        indent(out) << "(self." << maybe_escape_identifier(tfield->get_name())
+                    << (gen_cocoa_ ? " ?" : " ") << "== other." << maybe_escape_identifier(tfield->get_name()) << ")"; // swift 2 ?== operator not in 3?
         if (++m_iter != members.end()) {
           out << " &&";
         }
@@ -1029,7 +1032,7 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
       indent_down();
     } else {
       block_open(out);
-      indent(out) << "switch (lhs, rhs) {" << endl;
+      indent(out) << "switch (self, other) {" << endl;
       for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
         t_field* tfield = *m_iter;
         indent(out) << "case (." << tfield->get_name() << "(let lval), ."
@@ -1046,6 +1049,8 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
     out << " true" << endl;
   }
 
+  block_close(out);
+  out << endl;
   block_close(out);
   out << endl;
 }
