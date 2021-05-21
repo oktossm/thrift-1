@@ -38,6 +38,7 @@ using std::stringstream;
 using std::vector;
 
 static const string endl = "\n"; // avoid ostream << std::endl flushes
+static const string enumUnknownDefaultValue = "unknown";
 
 /**
  * Swift 3 code generator.
@@ -480,8 +481,13 @@ void t_swift_generator::generate_enum(t_enum* tenum) {
   vector<t_enum_value*> constants = tenum->get_constants();
   vector<t_enum_value*>::iterator c_iter;
 
+  bool contains_unknown = false;
+
   for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
-    f_decl_ << indent() << "case " << enum_case_name((*c_iter), true) << " = " << (*c_iter)->get_value() << endl;
+    string case_name = enum_case_name((*c_iter), true);
+    contains_unknown = contains_unknown || enumUnknownDefaultValue.compare(case_name) == 0;
+
+    f_decl_ << indent() << "case " << case_name << " = " << (*c_iter)->get_value() << endl;
   }
 
   // unknown associated value case for safety and similar behavior to other languages
@@ -503,9 +509,14 @@ void t_swift_generator::generate_enum(t_enum* tenum) {
   indent_down();
   f_decl_ << indent() << "} else {" << endl;
   indent_up();
-  f_decl_ << indent() << "throw TProtocolError(error: .invalidData," << endl;
-  f_decl_ << indent() << "                     message: \"Invalid enum value (\\(raw)) for \\("
-          << tenum->get_name() << ".self)\")" << endl;
+  if (contains_unknown) {
+      f_decl_ << indent() << "return ." << enumUnknownDefaultValue << endl;
+  } else {
+      f_decl_ << indent() << "throw TProtocolError(error: .invalidData," << endl;
+      f_decl_ << indent() << "                     message: \"Invalid enum value (\\(raw)) for \\("
+      << tenum->get_name() << ".self)\")" << endl;
+  }
+
   indent_down();
   f_decl_ << indent() << "}" << endl;
   block_close(f_decl_);
@@ -867,7 +878,7 @@ void t_swift_generator::generate_old_swift_struct(ostream& out,
   out << endl;
 
   if (struct_has_required_fields(tstruct)) {
-    generate_swift_struct_init(out, tstruct, false, struct_has_nonobjc_fields(tstruct), is_private);
+    generate_swift_struct_init(out, tstruct, true, struct_has_nonobjc_fields(tstruct), is_private);
   }
   if (struct_has_optional_fields(tstruct)) {
     generate_swift_struct_init(out, tstruct, true, struct_has_nonobjc_fields(tstruct), is_private);
@@ -894,7 +905,7 @@ void t_swift_generator::generate_swift_struct_init(ostream& out,
 
   string visibility = is_private ? (gen_cocoa_ ? "private" : "fileprivate") : "public";
 
-  indent(out) << (all && hasNonObjc ? "" : "@objc ")  << visibility << " init(";
+  indent(out) << (all || hasNonObjc ? "" : "@objc ")  << visibility << " init(";
 
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
