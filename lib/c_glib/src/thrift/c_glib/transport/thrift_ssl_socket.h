@@ -214,5 +214,12 @@ thrift_ssl_socket_initialize_openssl(void);
 void
 thrift_ssl_socket_finalize_openssl(void);
 
+gboolean
+thrift_ssl_socket_authorize(ThriftTransport * transport, GError **error);
+
+gboolean
+thrift_ssl_socket_close (ThriftTransport *transport, GError **error);
+
+
 G_END_DECLS
 #endif
