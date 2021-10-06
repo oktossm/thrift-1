@@ -290,25 +290,81 @@ private:
            || ttype->is_string();
   }
   
-  bool field_can_be_objc(t_field* tfield) {
-    t_type *ttype = tfield->get_type();
-    
-    if (ttype->is_map()) {
+
+  enum type_can_be_represented_objc_result { True, False, CheckRequired };
+
+
+  // top declaration required to anywhere
+  type_can_be_represented_objc_result type_can_be_represented_objc(t_type* ttype) {
+	if (ttype->is_map()) {
       t_map *map = (t_map *)ttype;
       t_type *valtype = map->get_val_type();
       t_type *keytype = map->get_key_type();
-      return !valtype->is_enum() && !keytype->is_enum();
+
+	  if (valtype->is_enum()) {
+		return False;
+	  }
+
+	  if (keytype->is_enum()) {
+		return False;
+	  }
+	  
+	  // More logic required here, cause not all cases handled
+	  // f.e. if valtype will return CheckRequired && keytype will be enum, 
+	  // then thrift generated code will be malformed
+	  if (valtype->is_map()) {
+		  type_can_be_represented_objc_result result = type_can_be_represented_objc(valtype);
+		  if (result != True) {
+			return result;
+		  }
+	  }
+
+	  if (keytype->is_map()) {
+		  type_can_be_represented_objc_result result = type_can_be_represented_objc(keytype);
+		  if (result != True) {
+			return result;
+		  }
+	  }
+
+      return True;
     } else if (ttype->is_set()) {
       t_set *set = (t_set *)ttype;
       t_type *elemtype = set->get_elem_type();
-      return !elemtype->is_enum();
+      if (!elemtype->is_enum()) {
+		return True;
+	  }
+	  return False;
     } else if (ttype->is_list()) {
       t_list *list = (t_list *)ttype;
       t_type *elemtype = list->get_elem_type();
-      return !elemtype->is_enum();
+
+	  if (!elemtype->is_enum()) {
+		  return True;
+	  }
+	  return False;
     }
     
-    return !field_is_optional(tfield) || type_can_be_null(ttype);
+	return CheckRequired;
+  }
+
+  bool field_can_be_objc(t_field* tfield) {
+    t_type *ttype = tfield->get_type();
+    
+	type_can_be_represented_objc_result result = type_can_be_represented_objc(ttype);
+
+	if (result != CheckRequired) {
+		return result == True;
+	}
+    
+	if (type_can_be_null(ttype)) {
+		return true;
+	}
+
+    if (!field_is_optional(tfield)) {
+		return true;
+	}
+
+	return false;
   }
   
   bool hasSuffix (std::string const &fullString, std::string const &ending) {
