@@ -1073,14 +1073,15 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
   out << endl;
   indent(out) << visibility << " override func isEqual(_ object: Any?) -> Bool";
   block_open(out);
-  indent(out) << "guard let other = object as? " << tstruct->get_name() << " else { return false }";
-  out << endl;
-  indent(out) << "return";
 
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
 
   if (members.size()) {
+    indent(out) << "guard let other = object as? " << tstruct->get_name() << " else { return false }";
+    out << endl;
+    indent(out) << "return";
+
     if (!tstruct->is_union()) {
       out << endl;
       indent_up();
@@ -1111,7 +1112,7 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
     }
   }
   else {
-    out << " true" << endl;
+    indent(out) << "return (object as? " << tstruct->get_name() << ") != nil" << endl;
   }
 
   block_close(out);
@@ -1629,12 +1630,22 @@ void t_swift_generator::generate_swift_struct_printable_extension(ostream& out, 
     if (!tstruct->is_union()) {
       out << "(\"" << endl;
       for (f_iter = fields.begin(); f_iter != fields.end();) {
+		bool optional_field = field_is_optional(*f_iter);
+		string name = maybe_escape_identifier((*f_iter)->get_name());
+		if (optional_field) {
+			indent(out) << "if let " << name << " = " << name;
+			block_open(out);
+		}
+
         indent(out) << "desc += \"" << (*f_iter)->get_name()
-                    << "=\\(String(describing: self." << maybe_escape_identifier((*f_iter)->get_name()) << "))";
+                    << "=\\(String(describing: " << name << "))";
         if (++f_iter != fields.end()) {
           out << ", ";
         }
         out << "\"" << endl;
+		if (optional_field) {
+			block_close(out);
+		}
       }
     } else {
       out << ".\"" << endl;
