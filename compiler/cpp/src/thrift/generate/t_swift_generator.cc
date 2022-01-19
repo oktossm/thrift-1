@@ -1073,14 +1073,15 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
   out << endl;
   indent(out) << visibility << " override func isEqual(_ object: Any?) -> Bool";
   block_open(out);
-  indent(out) << "guard let other = object as? " << tstruct->get_name() << " else { return false }";
-  out << endl;
-  indent(out) << "return";
 
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
 
   if (members.size()) {
+    indent(out) << "guard let other = object as? " << tstruct->get_name() << " else { return false }";
+    out << endl;
+    indent(out) << "return";
+
     if (!tstruct->is_union()) {
       out << endl;
       indent_up();
@@ -1111,7 +1112,7 @@ void t_swift_generator::generate_swift_struct_equatable_extension(ostream& out,
     }
   }
   else {
-    out << " true" << endl;
+    indent(out) << "return (object as? " << tstruct->get_name() << ") != nil" << endl;
   }
 
   block_close(out);
